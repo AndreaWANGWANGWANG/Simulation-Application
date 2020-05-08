@@ -1,0 +1,290 @@
+#Xiaoxuuan Wang
+#xwang398@fordham.edu
+#Assignment 4
+```{r}
+#uniform random number generator
+ran2 <- function(seed,n=1){
+  IM1<- 2147483563 
+  IM2<- 2147483399
+  AM<- (1.0/IM1) 
+  IMM1<- (IM1-1)
+  IA1<- 40014 
+  IA2<- 40692
+  IQ1<- 53668 
+  IQ2<- 52774 
+  IR1<- 12211 
+  IR2<- 3791 
+  NTAB<- 32
+  NDIV<- (1+IMM1/NTAB) 
+  EPS<- 1.2e-7 
+  RNMX<- (1.0-EPS)
+  idum<-seed
+  idum2<- 123456789
+  iy<- 0
+  iv<- rep(0,NTAB)
+
+  random<-rep(0,n)
+  for(i in 1:n){
+    if(idum<=0){
+      idum<- max(-idum,1)
+      idum2=idum
+      j<-NTAB+8
+      while(j>0){
+        k=as.integer(idum/IQ1)
+        idum<-IA1*(idum-k*IQ1)-k*IR1
+        if(idum<0) {idum = idum + IM1}
+        if(j <= NTAB) {iv[j] <- idum}
+        j<- j-1
+      }
+      iy=iv[1]
+    }
+    k=as.integer(idum/IQ1)
+    idum=IA1*(idum-k*IQ1)-k*IR1
+    if(idum<0) {idum = idum + IM1}
+    k=as.integer(idum2/IQ2)
+    idum2=IA2*(idum2-k*IQ2)-k*IR2
+    if(idum2<0) {idum2 = idum2 + IM2}
+    j=as.integer(iy/NDIV)+1
+    iy=iv[j]-idum2
+    iv[j] = idum
+    if(iy<1) {iy = iy + IMM1}
+    if(AM*iy<RNMX){random[i]<-AM*iy}
+    else {random[i]<-RNMX}
+  }
+  return(random)
+}
+```
+
+```{r}
+#normal random number generator
+invnor<- function(uni){
+  a0=2.50662823884
+  a1=-18.61500062529
+  a2=41.39119773534
+  a3=-25.44106049637
+  b0=-8.47351093090
+  b1=23.08336743743
+  b2=-21.06224101826
+  b3=3.13082909833
+  c0=0.3374754822726147
+  c1=0.9761690190917186
+  c2=0.1607979714918209
+  c3=0.0276438810333863
+  c4=0.0038405729373609
+  c5=0.0003951896511919
+  c6=0.0000321767881768
+  c7=0.0000002888167364
+  c8=0.0000003960315187
+
+  
+  invnor<-rep(0,length(uni))
+  for(i in 1:length(invnor)){
+    y=uni[i]-0.5
+    if(abs(y)<0.42){
+      r<-y*y
+      x<-y*(((a3*r+a2)*r+a1)*r+a0)/((((b3*r+b2)*r+b1)*r+b0)*r+1)
+    }
+    else{
+      r<-uni[i]
+      if(y>0) r<- 1-uni[i]
+      r<- log(-log(r))
+      x<- c0+r*(c1+r*(c2+r*(c3+r*(c4+r*(c5+r*(c6+r*(c7+r*c8)))))))
+      if(y<0) x<- -x
+    }
+    invnor[i]<- x
+  }
+  return(invnor)
+}
+```
+
+```{r}
+MYSIIA_Delta<-function (seed,Initial_Value,S0,divyield,rf,Volatility,MMaturity,S_Past,S_t){
+# BEGIN ASIAN PRICING
+# S_Past - Older values of S
+# MMaturity - Months of maturity remaining
+#
+# Simulation parameters and variable initialization
+# Simulate S&P Values at the end of each month, ie.
+# 12 observations a year and Delta T = 1 month
+#
+DeltaT=1/12
+TMaturity<-MMaturity/12
+numpath<-100
+numran<-numpath*60
+#
+# Call Normal Random Number Generator
+# INPUT: SEED and NUMRAN
+#
+u<-ran2(seed, numran)
+rand_norm_c<-invnor(u)
+#hist(rand_norm_c,xlim=c(-5,5),breaks=20,freq=F)
+#curve(dnorm(x, mean=0, sd=1),from=-4, to=4,add=TRUE,lwd=2)
+#
+# Sample numpath times
+#
+St_Avg_Vals<-rep(0,numpath)
+SIIA_Vals<-rep(0,numpath)
+Option_Payoff<-rep(0,numpath)
+Option_Delta<-rep(0,numpath)
+hedgePL<-0
+jcount<-1
+lcount<-1
+while(jcount <= numpath) {
+#
+# Simulate monthly prices
+# Loop MMaturity times per path to calculate SIIA Val and delta
+#
+  St<-S_t
+  St_Avg<-S_Past
+  for (kcount in 1:MMaturity) {
+  St<-St*(exp((rf-divyield-0.5*(Volatility^2))*DeltaT+Volatility*sqrt(DeltaT)*rand_norm_c[lcount]))
+    St_Avg<-St_Avg+St
+    lcount<-lcount+1
+  }
+  St_Avg<-(St_Avg)/60
+  St_Avg_Vals[jcount]<-St_Avg
+  #
+  # Payoff of option is equal to payoff of a standard Asian Call
+  # plus an adjustment factor
+  #
+  Option_Payoff[jcount]<-max((St_Avg-S0)*(2*10000/S0),0)*exp(-rf*TMaturity)
+  Option_Delta[jcount]<-0
+  if(Option_Payoff[jcount] > 0) {
+  Option_Delta[jcount]<-exp(-rf*TMaturity)*(St_Avg/S0)*(2*10000/S0)
+  }
+  SIIA_Ret<-2*max((St_Avg-S0)/S0,0)
+  SIIA_Vals[jcount]<-Initial_Value+Initial_Value*SIIA_Ret
+  # cat("OptVal",jcount,"\n")
+  #if(MMaturity==1) cat("St",jcount,S_Past,St,St_Avg,Option_Payoff[jcount],Option_Delta[jcount],"\n")
+  jcount=jcount+1
+  }
+FV_SIIA<-mean(SIIA_Vals[1:numpath])
+PV_SIIA<-exp(-rf*TMaturity)*mean(SIIA_Vals[1:numpath])
+PV_Bond<-exp(-rf*TMaturity)*10000
+Asian_Val<-mean(Option_Payoff)
+Asian_Delta<-mean(Option_Delta)
+#Asian_Val2<-PV_SIIA-PV_Bond
+#
+# END ASIAN VAL AND DELTA FUNCTION
+SIIA_Vals<-rep(0,2)
+SIIA_Vals[1]<-Asian_Val
+SIIA_Vals[2]<-Asian_Delta
+#cat("Asian",St,S_Past,Asian_Val,Asian_Delta,"\n")
+#if (MMaturity==1) cat("ST",numpath,Asian_Val,Asian_Delta,"\n")
+return(SIIA_Vals)
+}
+```
+
+```{r}
+DeltaT=1/12
+Initial_Value<-10000
+S0<-2750
+divyield<-0.02
+rf<-0.03
+Volatility<-0.15
+TMaturity<-5
+dmax=50
+drift<-0.08
+lcount<-1
+dcount<-1
+Hedge_Vals<-rep(0,dmax)
+portfolio_val <- rep(0, dmax)
+hedgevals <- rep(0, dmax)
+hedgerets <- rep(0, dmax)
+seed<- -10
+
+
+u<-ran2(seed, dmax*60)
+X<-invnor(u)
+ncount <- 1
+
+while(dcount<=dmax){
+  mcount<-1
+  MMaturity<-60
+  S_Past<-0
+  S_t<-S0
+  SIIA_Vals<-rep(0,2)
+  seed<-(seed*1600)%%750
+  SIIA_Vals<-MYSIIA_Delta(seed,Initial_Value,S0,divyield,rf,Volatility,MMaturity,S_Past,S_t)
+  SIIA_0<-SIIA_Vals[1]
+  SIIA_Delta<-SIIA_Vals[2]
+  d_past <- SIIA_Delta
+  HedgePL<-SIIA_0-SIIA_Delta*S0
+  
+  SIIA_t<-SIIA_0
+  mcount<-1
+  mmax<-MMaturity
+  while(mcount<=mmax){
+    S_t<-S_t*exp(drift*DeltaT+Volatility*sqrt(DeltaT)*X[ncount])
+    MMaturity<-MMaturity-1
+    S_Past<-S_t+S_Past
+    SIIA_Vals<-MYSIIA_Delta(seed,Initial_Value,S0,divyield,rf,Volatility,MMaturity,S_Past,S_t)
+    
+    SIIA_0 <- SIIA_Vals[1]
+    SIIA_Delta <- SIIA_Vals[2]
+    HedgePL <- HedgePL - (SIIA_Delta-d_past)*S_t
+    d_past <- SIIA_Delta
+    mcount=mcount+1
+    ncount=ncount+1
+  }
+  S_Past <- S_Past/mmax
+  portfolio_val[dcount] <- 10000 + (20000/S0)*max(S_Past-S0,0)
+  
+  hedgevals[dcount] <- HedgePL
+  hedgerets[dcount] <- ((d_past*S_t) - SIIA_t + hedgevals[dcount])/SIIA_t
+  dcount=dcount+1
+}
+hedgerets[dmax]
+```
+#Q2
+```{r}
+K=100
+T=0.5
+DeltaT=2/52
+rf=0.03
+S0=100
+vol=0.25
+npaths=1000
+nsteps=13 #bi-weekly grid
+
+St_Vals=matrix(rep(0),nrow=nsteps, ncol=npaths)
+payoffs=matrix(rep(0),npaths)
+lcount=1
+
+u<-ran2(seed, 100000)
+rand_norm_c<-invnor(u)
+
+for(jcount in 1:npaths){
+  St=S0
+  for(kcount in 1:nsteps){
+    St=St*exp((rf-0.5*vol^2)*DeltaT+vol*sqrt(DeltaT)*rand_norm_c[lcount])
+    lcount=lcount+1
+    St_Vals[kcount,jcount]=St
+  }
+}
+
+
+AmericanPut<-function(Barrier){
+for(jcount in 1:npaths){
+  kcount<-1
+  while(kcount<=nsteps){
+    if(St_Vals[kcount,jcount]<=Barrier){
+      kcount=kcount+1
+      break
+      }
+    kcount=kcount+1
+  }
+  po=exp(-rf*(kcount-1)*2/52)*max(K-St_Vals[kcount-1,jcount],0)
+  payoffs[jcount]=po
+}
+
+return(mean(payoffs))
+}
+
+OptimalBarrier <- optimize(AmericanPut, interval = c(0,100), tol = 0.00001, maximum = TRUE)
+cat("The optimal barrier is ", OptimalBarrier$maximum,"\n")
+cat("The optimal American put price is ", OptimalBarrier$objective,"\n")
+cat("The value of the American put determined by a Binomial Model is 6.1")
+```
+
+
