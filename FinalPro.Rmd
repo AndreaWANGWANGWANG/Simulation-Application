@@ -1,0 +1,448 @@
+#Xiaoxuan_Wang
+#ASSIGNMENT_3
+#xwang398@fordham.edu
+
+###### random number generator ######
+```{r}
+#uniform random number generator
+ran2 <- function(seed,n=1){
+  IM1<- 2147483563 
+  IM2<- 2147483399
+  AM<- (1.0/IM1) 
+  IMM1<- (IM1-1)
+  IA1<- 40014 
+  IA2<- 40692
+  IQ1<- 53668 
+  IQ2<- 52774 
+  IR1<- 12211 
+  IR2<- 3791 
+  NTAB<- 32
+  NDIV<- (1+IMM1/NTAB) 
+  EPS<- 1.2e-7 
+  RNMX<- (1.0-EPS)
+  idum<-seed
+  idum2<- 123456789
+  iy<- 0
+  iv<- rep(0,NTAB)
+
+  random<-rep(0,n)
+  for(i in 1:n){
+    if(idum<=0){
+      idum<- max(-idum,1)
+      idum2=idum
+      j<-NTAB+8
+      while(j>0){
+        k=as.integer(idum/IQ1)
+        idum<-IA1*(idum-k*IQ1)-k*IR1
+        if(idum<0) {idum = idum + IM1}
+        if(j <= NTAB) {iv[j] <- idum}
+        j<- j-1
+      }
+      iy=iv[1]
+    }
+    k=as.integer(idum/IQ1)
+    idum=IA1*(idum-k*IQ1)-k*IR1
+    if(idum<0) {idum = idum + IM1}
+    k=as.integer(idum2/IQ2)
+    idum2=IA2*(idum2-k*IQ2)-k*IR2
+    if(idum2<0) {idum2 = idum2 + IM2}
+    j=as.integer(iy/NDIV)+1
+    iy=iv[j]-idum2
+    iv[j] = idum
+    if(iy<1) {iy = iy + IMM1}
+    if(AM*iy<RNMX){random[i]<-AM*iy}
+    else {random[i]<-RNMX}
+  }
+  return(random)
+}
+```
+
+```{r}
+#normal random number generator
+invnor<- function(uni){
+  a0=2.50662823884
+  a1=-18.61500062529
+  a2=41.39119773534
+  a3=-25.44106049637
+  b0=-8.47351093090
+  b1=23.08336743743
+  b2=-21.06224101826
+  b3=3.13082909833
+  c0=0.3374754822726147
+  c1=0.9761690190917186
+  c2=0.1607979714918209
+  c3=0.0276438810333863
+  c4=0.0038405729373609
+  c5=0.0003951896511919
+  c6=0.0000321767881768
+  c7=0.0000002888167364
+  c8=0.0000003960315187
+
+  
+  invnor<-rep(0,length(uni))
+  for(i in 1:length(invnor)){
+    y=uni[i]-0.5
+    if(abs(y)<0.42){
+      r<-y*y
+      x<-y*(((a3*r+a2)*r+a1)*r+a0)/((((b3*r+b2)*r+b1)*r+b0)*r+1)
+    }
+    else{
+      r<-uni[i]
+      if(y>0) r<- 1-uni[i]
+      r<- log(-log(r))
+      x<- c0+r*(c1+r*(c2+r*(c3+r*(c4+r*(c5+r*(c6+r*(c7+r*c8)))))))
+      if(y<0) x<- -x
+    }
+    invnor[i]<- x
+  }
+  return(invnor)
+}
+```
+
+```{r}
+seed<- -10
+u<-ran2(seed, 200000)
+norm<-invnor(u) #generate a series of normal-distributed random variables
+
+```
+
+###### rolling covered call  ######
+```{r}
+#stock prices paths with miu=0.08, sigma<-0.256
+miu<-0.08
+sigma<-0.256
+numpath<-10000
+T<-1
+dt<-1/12
+S0<-200.4
+count<-1
+ncount<-1
+stock_prices<-matrix(rep(S0),nrow=13,ncol=numpath)
+while(count<numpath){
+  St<-S0
+  for (i in 2:13) {
+    St<-St*exp(miu*dt+sigma*sqrt(dt)*norm[ncount])
+    stock_prices[i,count]<-St
+    ncount<- ncount+1
+  }
+  count= count+1
+}
+
+S13s<-stock_prices[13,]
+
+assumption_mean<-exp(miu+sigma*sigma/2)-1
+sample_mean<-mean(S13s/S0-1)
+
+assumption_std<-exp(miu)*sqrt(exp(sigma*sigma)-1)
+sample_std<-sd(S13s/S0-1)
+
+#The sample mean and standard deviation of the sample returns is close to that under the assumption of miu=0.08 and sigma<-0.256
+c(assumption_mean, sample_mean) 
+c(assumption_std, sample_std)
+
+```
+
+```{r}
+#Black-Scholes Put Option Price
+BS<-function(type='c',S,K,vol,t,r){
+  d1=(log(S/K)+(r+0.5*vol*vol)*t)/(vol*sqrt(t))
+  d2=d1-vol*sqrt(t)
+  if(type=='p'){
+    price=K*exp(-r*t)*pnorm(-d2)-S*pnorm(-d1)
+  }
+  else{price = S*pnorm(d1)-K*exp(-r*t)*pnorm(d2)}
+  
+  return(price)
+}
+```
+
+
+```{r}
+#miu=0.08, sigma<-0.256, K=1.05*S
+S0<-200.4
+K<-1.05 * S0
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  sell<- BS('c',S0,K,vol,t=3/12,r)#at time t=0
+  payoffs_T[i]= payoffs_T[i]+sell*exp(r*1) #future value at t=1year
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j,i],vol,t=3/12,r)
+    buy= -BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  buy=-BS('c',S=stock_prices[13,i],K=1.05*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=payoffs_T[i] + buy
+}
+payoffs_T=(payoffs_T+S13s-rep(S0,numpath))/S0
+
+mean_return<-rep(0,4)
+std_return<-rep(0,4)
+mean_return[1]=mean(payoffs_T)#miu=0.08, sigma<-0.256, K=1.05*S
+std_return[1]=sd(payoffs_T)
+```
+
+```{r}
+#miu=0.08, sigma<-0.256, K=0.95*S
+S0<-200.4
+K<-0.95 * S0
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  sell<- BS('c',S0,K,vol,t=3/12,r)#at time t=0
+  payoffs_T[i]= payoffs_T[i]+sell*exp(r*1) 
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j,i],vol,t=3/12,r)
+    buy= -BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  buy=-BS('c',S=stock_prices[13,i],K=0.95*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=payoffs_T[i] + buy
+}
+payoffs_T=(payoffs_T+S13s-rep(S0,numpath))/S0
+
+mean_return[2]=mean(payoffs_T)#miu=0.08, sigma<-0.256, K=0.95*S
+std_return[2]=sd(payoffs_T)
+```
+
+```{r}
+#stock prices paths with miu=0.12
+miu<-0.12
+sigma<-0.256
+numpath<-10000
+T<-1
+dt<-1/12
+S0<-200.4
+count<-1
+ncount<-1
+stock_prices<-matrix(rep(S0),nrow=13,ncol=numpath)
+while(count<numpath){
+  St<-S0
+  for (i in 2:13) {
+    St<-St*exp(miu*dt+sigma*sqrt(dt)*norm[ncount])
+    stock_prices[i,count]<-St
+    ncount<- ncount+1
+  }
+  count= count+1
+}
+
+S13s<-stock_prices[13,]
+
+assumption_mean<-exp(miu+sigma*sigma/2)-1
+sample_mean<-mean(S13s/S0-1)
+
+assumption_std<-exp(miu)*sqrt(exp(sigma*sigma)-1)
+sample_std<-sd(S13s/S0-1)
+
+#The sample mean and standard deviation of the sample returns is close to that under the assumption of miu=0.12 and sigma=0.3
+c(assumption_mean, sample_mean) 
+c(assumption_std, sample_std)
+
+```
+
+```{r}
+#miu=0.12, sigma=0.256, K=1.05*S
+S0<-200.4
+K<-1.05 * S0
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  sell<- BS('c',S0,K,vol,t=3/12,r)#at time t=0
+  payoffs_T[i]= payoffs_T[i]+sell*exp(r*1) 
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j,i],vol,t=3/12,r)
+    buy= -BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  buy=-BS('c',S=stock_prices[13,i],K=1.05*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=payoffs_T[i] + buy
+}
+payoffs_T=(payoffs_T+S13s-rep(S0,numpath))/S0
+
+mean_return[3]=mean(payoffs_T)#miu=0.12, K=1.05*S
+std_return[3]=sd(payoffs_T)
+```
+
+```{r}
+#miu=0.12, sigma=0.256, K=0.95*S
+S0<-200.4
+K<-0.95 * S0
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  sell<- BS('c',S0,K,vol,t=3/12,r)#at time t=0
+  payoffs_T[i]= payoffs_T[i]+sell*exp(r*1) 
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j,i],vol,t=3/12,r)
+    buy= -BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  buy=-BS('c',S=stock_prices[13,i],K=0.95*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=payoffs_T[i] + buy
+}
+payoffs_T=(payoffs_T+S13s-rep(S0,numpath))/S0
+
+mean_return[4]=mean(payoffs_T)#miu=0.12, K=0.95*S
+std_return[4]=sd(payoffs_T)
+```
+
+
+```{r}
+
+test<-t(matrix(c(mean_return,std_return),nrow = 4))
+table<-as.table(test)
+row.names(table)=c("mean of rets","std of rets")
+colnames(table)<-c("0.08/105","0.08/95","0.12/105","0.12/95")
+table
+```
+
+###### bull spread ######
+```{r}
+#stock prices paths with miu=0.08, sigma<-0.256
+
+miu<-0.08
+sigma<-0.256
+numpath<-10000
+T<-1
+dt<-1/12
+S0<-200.4
+count<-1
+ncount<-1
+stock_prices<-matrix(rep(S0),nrow=13,ncol=numpath)
+while(count<numpath){
+  St<-S0
+  for (i in 2:13) {
+    St<-St*exp(miu*dt+sigma*sqrt(dt)*norm[ncount])
+    stock_prices[i,count]<-St
+    ncount<- ncount+1
+  }
+  count= count+1
+}
+
+S13s<-stock_prices[13,]
+
+assumption_mean<-exp(miu+sigma*sigma/2)-1
+sample_mean<-mean(S13s/S0-1)
+
+assumption_std<-exp(miu)*sqrt(exp(sigma*sigma)-1)
+sample_std<-sd(S13s/S0-1)
+
+#The sample mean and standard deviation of the sample returns is close to that under the assumption of miu=0.08 and sigma<-0.256
+c(assumption_mean, sample_mean) 
+c(assumption_std, sample_std)
+
+```
+```{r}
+#miu=0.08
+S0<-200.4
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  buy<- -BS('c',S0,0.95*S0,vol,t=3/12,r)#at time t=0, buy 95% call, sell 105% call
+  sell<- BS('c',S0,1.05*S0,vol,t=3/12,r)
+  initial= buy+sell#negative value indicates we spend money
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j-1,i],vol,t=2/12,r)#offset old position
+    buy= -BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+    
+    buy= -BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j,i],vol,t=3/12,r)#enter new position
+    sell = BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j,i],vol,t=3/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  sell = BS('c',S=stock_prices[13,i],K=0.95*stock_prices[12,i],vol,t=2/12,r)#offset old position
+  buy=-BS('c',S=stock_prices[13,i],K=1.05*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=(payoffs_T[i] + sell+buy+initial)/(-initial)
+}
+
+mean_return<-rep(0,2)
+std_return<-rep(0,2)
+mean_return[1]=mean(payoffs_T)#miu=0.08, sigma<-0.256
+std_return[1]=sd(payoffs_T)
+```
+
+```{r}
+#stock prices paths with miu=0.12
+
+miu<-0.12
+sigma<-0.256
+numpath<-10000
+T<-1
+dt<-1/12
+S0<-200.4
+count<-1
+ncount<-1
+stock_prices<-matrix(rep(S0),nrow=13,ncol=numpath)
+while(count<numpath){
+  St<-S0
+  for (i in 2:13) {
+    St<-St*exp(miu*dt+sigma*sqrt(dt)*norm[ncount])
+    stock_prices[i,count]<-St
+    ncount<- ncount+1
+  }
+  count= count+1
+}
+
+S13s<-stock_prices[13,]
+
+assumption_mean<-exp(miu+sigma*sigma/2)-1
+sample_mean<-mean(S13s/S0-1)
+
+assumption_std<-exp(miu)*sqrt(exp(sigma*sigma)-1)
+sample_std<-sd(S13s/S0-1)
+
+#The sample mean and standard deviation of the sample returns is close to that under the assumption of miu=0.12 and sigma=0.3
+c(assumption_mean, sample_mean) 
+c(assumption_std, sample_std)
+
+```
+
+```{r}
+#miu=0.12
+S0<-200.4
+vol<-sigma
+r<-0.024
+payoffs_T<-rep(0,numpath)
+
+for(i in 1:numpath){
+  buy<- -BS('c',S0,0.95*S0,vol,t=3/12,r)#at time t=0, buy 95% call, sell 105% call
+  sell<- BS('c',S0,1.05*S0,vol,t=3/12,r)
+  initial<- buy+sell #negative value indicates we spend money
+  for(j in 2:12){
+    sell = BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j-1,i],vol,t=2/12,r)#offset old position
+    buy= -BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j-1,i],vol,t=2/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+    
+    buy= -BS('c',S=stock_prices[j,i],K=0.95*stock_prices[j,i],vol,t=3/12,r)#enter new position
+    sell = BS('c',S=stock_prices[j,i],K=1.05*stock_prices[j,i],vol,t=3/12,r)
+    payoffs_T[i]=payoffs_T[i] + (sell+buy)*exp(r*(1-(j-1)/12))
+  }
+  sell = BS('c',S=stock_prices[13,i],K=0.95*stock_prices[12,i],vol,t=2/12,r)#offset old position
+  buy=-BS('c',S=stock_prices[13,i],K=1.05*stock_prices[12,i],vol,t=2/12,r)
+  payoffs_T[i]=(payoffs_T[i] + sell+buy+initial)/(-initial)
+}
+
+
+mean_return[2]=mean(payoffs_T)#miu=0.12, sigma<-0.256
+std_return[2]=sd(payoffs_T)
+```
+
+```{r}
+mean_return=mean_return
+std_return=std_return
+test<-t(matrix(c(mean_return,std_return),nrow = 2))
+table<-as.table(test)
+row.names(table)=c("mean of rets","std of rets")
+colnames(table)<-c("0.08","0.12")
+table
+```
